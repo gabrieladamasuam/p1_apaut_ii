@@ -74,12 +74,12 @@ class KNNClassifier:
             np.ndarray: Matriz de distancias (m, n) donde D[i, j] = dist(X[i], X_train[j]).
         """
         metric = self.distance_metric
-        # cdist: calcula la matriz de distancias por pares D (m, n) con D[i, j] = dist(X[i], X_train[j])
+        if callable(metric):
+            return distance.cdist(X, self.X_train, metric=metric)
         if metric == 'minkowski':
-            if callable(metric):
-                return distance.cdist(X, self.X_train, metric=metric, p=self.p)
-            else:
-                return distance.cdist(X, self.X_train, metric=metric)
+            return distance.cdist(X, self.X_train, metric='minkowski', p=self.p)
+        # otras métricas de scipy (euclidean, cityblock, etc.)
+        return distance.cdist(X, self.X_train, metric=metric)
 
     def predict(self, X):
         """Realiza predicciones para las muestras de entrada.
