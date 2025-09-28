@@ -20,33 +20,43 @@ from scipy.spatial import distance
 
 class KNNClassifier:
     def __init__(self, k=3, distance_metric=None, p=2):
-        """
-        Inicializa el clasificador KNN.
+        """Clasificador KNN.
 
-        Parámetros:
-        - k: Número de vecinos a considerar.
-        - distance_metric: Función de distancia que toma dos vectores y devuelve un escalar.
+        Args:
+            k (int, optional): Número de vecinos a considerar. Defaults to 3.
+            distance_metric (str o callable, optional): Métrica de distancia a utilizar. Defaults to None.
+            p (int, optional): Parámetro p para la distancia de Minkowski. Defaults to 2.
+
+        Raises:
+            ValueError: Si los parámetros son inválidos.
         """
-        self.k = int(k)
+        if not isinstance(k, int) or k < 1:
+            raise ValueError("k debe ser un entero positivo")
+        self.k = k
         self.p = p
-        self.distance_metric = 'minkowski' if distance_metric is None else distance_metric
+        self.distance_metric = distance_metric or 'minkowski'
         self.X_train = None
         self.y_train = None
         self._fitted = False
 
     def fit(self, X, y):
-        """
-        Ajusta el modelo KNN a los datos de entrenamiento.
+        """Entrena el clasificador KNN.
 
-        Parámetros:
-        - X: Matriz de características de entrenamiento.
-        - y: Vector de etiquetas de entrenamiento.
+        Args:
+            X (np.ndarray): Matriz de características de entrenamiento.
+            y (np.ndarray): Vector de etiquetas de entrenamiento.
+
+        Raises:
+            ValueError: Si los datos de entrada son inválidos.
+            ValueError: Si los datos de entrada son inválidos.
+
+        Returns:
+            KNNClassifier: El clasificador KNN entrenado.
         """
-        X = np.asarray(X); y = np.asarray(y)
+        X = np.asarray(X)
+        y = np.asarray(y)
         if X.shape[0] != y.shape[0]:
             raise ValueError("X e y deben tener el mismo número de ejemplos")
-        if self.k < 1:
-            raise ValueError("k debe ser >= 1")
         if self.k > X.shape[0]:
             raise ValueError("k no puede ser mayor que el número de muestras de entrenamiento")
         self.X_train = X
@@ -54,78 +64,66 @@ class KNNClassifier:
         self._fitted = True
         return self
 
-    def _pairwise_distances(self, X):
-        """
-        Calcula la matriz de distancias entre los ejemplos en X y los ejemplos de entrenamiento.
+    def _distance_matrix(self, X):
+        """Calcula la matriz de distancias entre las muestras de X y las de entrenamiento.
 
         Args:
-            X (np.ndarray): Matriz de características de los ejemplos a clasificar.
+            X (np.ndarray): Matriz de características de las muestras a predecir.
 
         Returns:
-            np.ndarray: Matriz de distancias.
+            np.ndarray: Matriz de distancias (m, n) donde D[i, j] = dist(X[i], X_train[j]).
         """
         metric = self.distance_metric
-        if callable(metric):
-            return distance.cdist(X, self.X_train, metric=metric)
-        if metric is None or metric == 'minkowski':
-            return distance.cdist(X, self.X_train, metric='minkowski', p=self.p)
-        return distance.cdist(X, self.X_train, metric=metric)
+        # cdist: calcula la matriz de distancias por pares D (m, n) con D[i, j] = dist(X[i], X_train[j])
+        if metric == 'minkowski':
+            if callable(metric):
+                return distance.cdist(X, self.X_train, metric=metric, p=self.p)
+            else:
+                return distance.cdist(X, self.X_train, metric=metric)
 
     def predict(self, X):
-        """
-        Realiza predicciones para los ejemplos en X.
+        """Realiza predicciones para las muestras de entrada.
 
         Args:
-            X (np.ndarray): Matriz de características de los ejemplos a clasificar.
+            X (np.ndarray): Matriz de características de las muestras a predecir.
+
+        Raises:
+            RuntimeError: Si el clasificador no ha sido entrenado.
 
         Returns:
-            np.ndarray: Vector de etiquetas predichas.
+            np.ndarray: Vector de etiquetas predichas para las muestras de entrada.
         """
         if not self._fitted:
-            raise RuntimeError("Debes llamar a fit antes de predict.")
+            raise RuntimeError("Debes llamar a fit antes de predecir")
         X = np.asarray(X)
-        dists = self._pairwise_distances(X)
+        # Si X es un único vector (d,), convertirlo a (1, d) para operar como lote de 1 muestra
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        dists = self._distance_matrix(X)
+        # Selecciona los k menores sin ordenar el bloque (O(n) por fila), suficiente para voto mayoritario y más eficiente que argsort (O(n log n))
         idx = np.argpartition(dists, kth=self.k - 1, axis=1)[:, :self.k]
-        neighbor_labels = self.y_train[idx]
-        m = mode(neighbor_labels, axis=1, keepdims=False)
-        majority = getattr(m, "mode", m)
-        return np.asarray(majority).ravel().astype(self.y_train.dtype)
-
-    def score(self, X, y):
-        """
-        Evalúa el rendimiento del modelo en los datos de prueba.
-
-        Parámetros:
-        - X: Matriz de características de prueba.
-        - y: Vector de etiquetas de prueba.
-
-        Returns:
-            float: Precisión del modelo en los datos de prueba.
-        """
-        X = np.asarray(X); y = np.asarray(y)
-        return np.mean(self.predict(X) == y)
+        vecinos = self.y_train[idx]
+        m = mode(vecinos, axis=1, keepdims=False)
+        pred = getattr(m, "mode", m)  # usa m.mode si existe; si no, m ya es el array del modo
+        return np.asarray(pred).ravel().astype(self.y_train.dtype)
 
     def get_params(self, deep=True):
-        """
-        Obtiene los parámetros del modelo.
+        """Obtiene los parámetros del clasificador KNN.
 
         Args:
-            deep (bool): Si se deben incluir los parámetros de los sub-modelos.
+            deep (bool, optional): Si se deben obtener también los parámetros de los subobjetos. Defaults to True.
 
         Returns:
-            dict: Diccionario con los parámetros del modelo.
+            dict: Diccionario con los parámetros del clasificador.
         """
         return {"k": self.k, "distance_metric": self.distance_metric, "p": self.p}
 
     def set_params(self, **params):
-        """ Establece los parámetros del modelo.
-
-        Args:
-            **params: Parámetros a establecer en el modelo.
+        """Establece los parámetros del clasificador KNN.
 
         Returns:
-            self
+            KNNClassifier: El clasificador KNN con los nuevos parámetros.
         """
-        for key, value in params.items():
-            setattr(self, key, value)
+        for param, value in params.items():
+            setattr(self, param, value)
         return self

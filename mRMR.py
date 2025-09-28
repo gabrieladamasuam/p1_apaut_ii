@@ -8,78 +8,89 @@ Requisitos:
 - Python 3.9+
 - numpy, scipy (opcional), scikit-learn, pandas (opcional para reportes)
 
-Autor:
+Autor: Eva Blázquez y Gabriela Damas
 """
-from sklearn.feature_selection import mutual_info_regression
 import numpy as np
+from typing import Optional, Dict, Tuple
+from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
 
 class mRMR:
-    def __init__(self, n_features: int):
-        """
-        Inicializa el selector mRMR.
-
-        Parámetros:
-        - n_features: Número de características a seleccionar.
-        """
+    """
+    Selector de atributos mRMR (Minimum Redundancy, Maximum Relevance).
+    - Relevancia: I(X_j; y) usando mutual_info_classif (clasificación).
+    - Redundancia: media de I(X_j; X_s) con las características ya seleccionadas (regresión entre pares continuos).
+    Compatible con sklearn (fit/transform, get_params/set_params).
+    """
+    def __init__(self, n_features: int, random_state: Optional[int] = 42):
+        if not isinstance(n_features, int) or n_features < 1:
+            raise ValueError("n_features debe ser un entero positivo")
         self.n_features = n_features
-        self.selected_features_ = None
+        self.random_state = random_state
+        self.selected_features_: Optional[np.ndarray] = None
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> None:
-        """
-        Ajusta el selector mRMR a los datos.
+    def get_params(self, deep: bool = True) -> dict:
+        return {"n_features": self.n_features, "random_state": self.random_state}
 
-        Parámetros:
-        - X: Matriz de características de entrada.
-        - y: Vector de etiquetas objetivo.
-        """
+    def set_params(self, **params):
+        for k, v in params.items():
+            setattr(self, k, v)
+        return self
+
+    def _pair_mi(self, X: np.ndarray, i: int, j: int, cache: Dict[Tuple[int, int], float]) -> float:
+        """MI simétrica entre dos características continuas X[:, i] y X[:, j] con caché."""
+        a, b = (i, j) if i <= j else (j, i)
+        if (a, b) in cache:
+            return cache[(a, b)]
+        mi = float(mutual_info_regression(X[:, [a]], X[:, b], random_state=self.random_state)[0])
+        cache[(a, b)] = mi
+        return mi
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        X = np.asarray(X)
+        y = np.asarray(y)
+        if X.ndim != 2:
+            raise ValueError("X debe ser 2D (n_samples, n_features)")
         n_samples, n_features = X.shape
+        if n_features == 0:
+            raise ValueError("X no contiene características")
+        k = min(self.n_features, n_features)
+
+        # Relevancia: MI de cada feature con y (clasificación)
+        relevance = mutual_info_classif(X, y, random_state=self.random_state)
+
+        # Selección greedy
         selected = []
-        not_selected = list(range(n_features))
+        remaining = list(range(n_features))
+        cache_mi_feat: Dict[Tuple[int, int], float] = {}
 
-        # Calcular relevancia (mutua información con y)
-        relevance = mutual_info_regression(X, y)
-        # Inicialmente, seleccionar la característica más relevante
-        idx = np.argmax(relevance)
-        selected.append(idx)
-        not_selected.remove(idx)
+        # 1) arranca con la más relevante
+        first = int(np.argmax(relevance))
+        selected.append(first)
+        remaining.remove(first)
 
-        # Precalcular la matriz de redundancia (mutua información entre características)
-        # Usamos mutual_info_regression para cada par (puede ser costoso)
-        # Para evitar for, usamos broadcasting y np.apply_along_axis
-        # Pero mutual_info_regression solo acepta 2D X y 1D y, así que usamos comprensión
-        redundancy = np.zeros((n_features, n_features))
-        for i in range(n_features):
-            redundancy[i, :] = [mutual_info_regression(X[:, [i]], X[:, j])[0] for j in range(n_features)]
+        # 2) iterativo: maximiza relevancia - redundancia media
+        while len(selected) < k and remaining:
+            scores = []
+            for j in remaining:
+                if selected:
+                    reds = [self._pair_mi(X, j, s, cache_mi_feat) for s in selected]
+                    red_mean = float(np.mean(reds)) if len(reds) else 0.0
+                else:
+                    red_mean = 0.0
+                scores.append(relevance[j] - red_mean)
+            j_best = remaining[int(np.argmax(scores))]
+            selected.append(j_best)
+            remaining.remove(j_best)
 
-        # Selección iterativa
-        for _ in range(self.n_features - 1):
-            # Para cada no seleccionada, calcular score mRMR
-            # score = relevancia - redundancia media con seleccionadas
-            rel = relevance[not_selected]
-            red = np.array([
-                redundancy[j, selected].mean() if selected else 0.0
-                for j in not_selected
-            ])
-            scores = rel - red
-            idx_in_not_selected = np.argmax(scores)
-            idx = not_selected[idx_in_not_selected]
-            selected.append(idx)
-            not_selected.remove(idx)
-
-        self.selected_features_ = np.array(selected)
+        self.selected_features_ = np.array(selected, dtype=int)
+        return self
 
     def transform(self, X: np.ndarray) -> np.ndarray:
-        """
-        Disminuye la matriz de características a las características seleccionadas.     
-        Parámetros:
-        - X: Matriz de características de entrada.
-        Retorna:
-        - X_reduced: Matriz de características reducida.
-        """
         if self.selected_features_ is None:
             raise RuntimeError("Debes llamar a fit antes de transform.")
+        X = np.asarray(X)
         return X[:, self.selected_features_]
-    
+
     def fit_transform(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         self.fit(X, y)
         return self.transform(X)
