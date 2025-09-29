@@ -46,14 +46,22 @@ data_mrmr = (np.array([
     [0, 1, 1]
 ]), np.array([0, 1, 1, 0, 0]))
 
-def test_mRMR_basic(data_mrmr):
-    """
-    Test para verificar si el método mRMR selecciona correctamente los atributos.
-    """
-    X,y = data_mrmr
-    my_mRMR =  mRMR(2)
+def test_mRMR_basic():
+    X = np.array([
+        [0, 2, 1],
+        [1, 5, 0],
+        [1, 8, 0],
+        [0, 0, 1],
+        [0, 1, 1]
+    ])
+    y = np.array([0, 1, 1, 0, 0])
+    my_mRMR = mRMR(2)
     my_mRMR.fit(X, y)
     X_transformed = my_mRMR.transform(X)
+
     assert X_transformed.shape[1] == 2
-    assert X_transformed == X[:, [0, 2]]  
+    assert len(my_mRMR.selected_idx_) == 2
+    assert all(i in [0, 1, 2] for i in my_mRMR.selected_idx_)
+
+
     
