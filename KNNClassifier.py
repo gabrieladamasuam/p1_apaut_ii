@@ -102,8 +102,8 @@ class KNNClassifier:
         dists = self._distance_matrix(X)
         # Selecciona los k menores sin ordenar el bloque (O(n) por fila), suficiente para voto mayoritario y más eficiente que argsort (O(n log n))
         idx = np.argpartition(dists, kth=self.k - 1, axis=1)[:, :self.k]
-        vecinos = self.y_train[idx]
-        m = mode(vecinos, axis=1, keepdims=False)
+        neigh = self.y_train[idx]
+        m = mode(neigh, axis=1, keepdims=False)
         pred = getattr(m, "mode", m)  # usa m.mode si existe; si no, m ya es el array del modo
         return np.asarray(pred).ravel().astype(self.y_train.dtype)
 
