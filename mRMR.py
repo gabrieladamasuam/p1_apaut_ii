@@ -25,7 +25,7 @@ class mRMR:
             raise ValueError("n_features debe ser un entero positivo")
         self.n_features = n_features
         self.random_state = random_state
-        self.selected_features_ = None  # Se almacenarán los índices seleccionados
+        self.selected_idx_ = None  # Se almacenarán los índices seleccionados
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         """Ajusta el selector mRMR a los datos.
@@ -74,7 +74,7 @@ class mRMR:
             selected.append(i_best)
             remaining.remove(i_best)
 
-        self.selected_features_ = np.array(selected, dtype=int)
+        self.selected_idx_ = np.array(selected, dtype=int)
         return self
 
     def _pair_im(self, X: np.ndarray, i: int, j: int, pairs: dict) -> float:
@@ -107,10 +107,10 @@ class mRMR:
         Retorna:
         - X_reduced: Matriz de características reducida.
         """
-        if self.selected_features_ is None:
+        if self.selected_idx_ is None:
             raise RuntimeError("Debes llamar a fit antes de transform.")
         X = np.asarray(X)
-        return X[:, self.selected_features_]
+        return X[:, self.selected_idx_]
 
     def fit_transform(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """
